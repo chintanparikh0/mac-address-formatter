@@ -63,35 +63,9 @@ def main():
             if formatted_macs:
                 st.success('MAC Address Formatted Successfully! 🎉')
                 
-                # Create a session state to track the last copied MAC address
-                if 'last_copied_mac' not in st.session_state:
-                    st.session_state.last_copied_mac = None
-                
                 # Display formatted MAC addresses
                 for format_name, formatted_mac in formatted_macs.items():
-                    # Create a row with format name and copy button
-                    col1, col2 = st.columns([3, 1])
-                    with col1:
-                        st.code(f"{format_name}: {formatted_mac}")
-                    with col2:
-                        # Create a unique key for each button
-                        copy_button = st.button("Copy", key=f"copy_{format_name}")
-                        
-                        # Check if this specific copy button was clicked
-                        if copy_button:
-                            # Create a JavaScript component to copy to clipboard
-                            st.components.v1.html(f"""
-                            <script>
-                            navigator.clipboard.writeText("{formatted_mac}").then(function() {{
-                                console.log("Copied: {formatted_mac}");
-                            }}, function(err) {{
-                                console.error('Could not copy text: ', err);
-                            }});
-                            </script>
-                            """, height=0)
-                            
-                            # Show a toast notification
-                            st.toast(f"Copied {format_name}")
+                    st.code(f"{format_name}: {formatted_mac}")
             else:
                 st.error('Invalid MAC Address. Please enter a 12-character MAC address.')
         else:
