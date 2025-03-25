@@ -63,24 +63,9 @@ def main():
             if formatted_macs:
                 st.success('MAC Address Formatted Successfully! 🎉')
                 
-                # Display formatted MAC addresses with explanations
+                # Display formatted MAC addresses
                 for format_name, formatted_mac in formatted_macs.items():
                     st.write(f"{format_name}: {formatted_mac}")
-                
-                # Create a section for easy copying
-                st.subheader("Copy Formatted MAC Addresses")
-                
-                # Create columns for each format
-                cols = st.columns(len(formatted_macs))
-                
-                for i, (format_name, formatted_mac) in enumerate(formatted_macs.items()):
-                    with cols[i]:
-                        st.text_input(
-                            label=format_name, 
-                            value=formatted_mac, 
-                            key=f"mac_copy_{i}",
-                            help="Click to select and copy"
-                        )
             else:
                 st.error('Invalid MAC Address. Please enter a 12-character MAC address.')
         else:
