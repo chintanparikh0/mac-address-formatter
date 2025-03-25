@@ -65,15 +65,26 @@ def main():
                 
                 # Display formatted MAC addresses
                 for format_name, formatted_mac in formatted_macs.items():
+                    # Extract just the MAC address
+                    mac_only = formatted_mac.split(': ')[-1] if ': ' in formatted_mac else formatted_mac
+                    
                     # Create a row with format name and copy button
                     col1, col2 = st.columns([3, 1])
                     with col1:
-                        st.code(f"{format_name}: {formatted_mac}")
+                        st.code(f"{format_name}: {mac_only}")
                     with col2:
                         if st.button("Copy", key=format_name):
+                            # Use JavaScript to copy to clipboard
+                            st.components.v1.html(f"""
+                            <script>
+                            navigator.clipboard.writeText("{mac_only}").then(function() {{
+                                alert("Copied: {mac_only}");
+                            }}, function(err) {{
+                                console.error('Could not copy text: ', err);
+                            }});
+                            </script>
+                            """, height=0)
                             st.toast(f"Copied {format_name}")
-                            # Write only the MAC address to clipboard
-                            st.clipboard(formatted_mac.split(': ')[-1])
             else:
                 st.error('Invalid MAC Address. Please enter a 12-character MAC address.')
         else:
