@@ -72,7 +72,8 @@ def main():
                     with col2:
                         if st.button("Copy", key=format_name):
                             st.toast(f"Copied {format_name}")
-                            st.clipboard(formatted_mac)
+                            # Write only the MAC address to clipboard
+                            st.clipboard(formatted_mac.split(': ')[-1])
             else:
                 st.error('Invalid MAC Address. Please enter a 12-character MAC address.')
         else:
