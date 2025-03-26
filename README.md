@@ -1,13 +1,11 @@
-# Network Utility Toolkit
+# 🌐 Network Utility Toolkit
 
-A Streamlit application providing network-related utilities including:
-- MAC Address Formatting
-- Random MAC Address Generation
-- IP Address Lookup
+A comprehensive Streamlit application providing advanced network-related utilities.
 
 ## Features
-### MAC Address Formatter
-- Convert MAC addresses to different formats
+
+### 1. MAC Address Formatter
+- Convert MAC addresses to multiple formats
 - Support for various input styles
 - Format options:
   - Colon (Cisco) style
@@ -15,19 +13,25 @@ A Streamlit application providing network-related utilities including:
   - Dot (Cisco) style
   - No Separator style
 
-### Random MAC Address Generator
+### 2. Random MAC Address Generator
 - Generate random MAC addresses
 - Support for different MAC types:
   - Random
   - Unicast
   - Multicast
-- Generate multiple MAC addresses at once
+- Generate multiple MAC addresses simultaneously
 
-### IP Address Lookup
+### 3. IP Address Lookup
 - Comprehensive IP address information retrieval
 - Technical details
 - Geolocation information
-- ISP and ASN details
+- ISP and network details
+
+### 4. Network Diagnostic Tools
+- Ping utility
+- Port scanner
+- Hash generator (MD5, SHA-1, SHA-256, SHA-512)
+- Strong password generator
 
 ## Requirements
 - Python 3.7+
@@ -37,8 +41,8 @@ A Streamlit application providing network-related utilities including:
 ## Installation
 1. Clone the repository
 2. Install requirements: 
-   ```
-   pip install streamlit requests
+   ```bash
+   pip install -r requirements.txt
    ```
 
 ## How to Run
@@ -47,9 +51,19 @@ streamlit run mac_formatter_app.py
 ```
 
 ## Usage
-1. Choose a tab:
-   - MAC Formatter: Enter a MAC address and select a format
-   - MAC Generator: Choose MAC type and number of addresses
-   - IP Lookup: Enter an IP address to get detailed information
-2. Click the respective action button
-3. View the results
+1. Select a tab from:
+   - MAC Formatter
+   - MAC Generator
+   - IP Lookup
+   - Network Tools
+2. Follow the on-screen instructions
+3. Click the action buttons to generate or retrieve information
+
+## Contributing
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## License
+[Specify your license here]
+
+## Disclaimer
+This tool is for educational and network management purposes only. Always respect privacy and legal guidelines.
