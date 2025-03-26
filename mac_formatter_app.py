@@ -31,8 +31,16 @@ def format_mac_address(mac, format_type):
         return '-'.join(mac[i:i+2] for i in range(0, 12, 2))
     elif format_type == 'Dot (Cisco)':
         return '.'.join(mac[i:i+4] for i in range(0, 12, 4))
-    elif format_type == 'No Separator':
+    elif format_type == 'No Separator (Uppercase)':
         return mac.upper()
+    elif format_type == 'No Separator (Lowercase)':
+        return mac
+    elif format_type == 'Colon (Lowercase)':
+        return ':'.join(mac[i:i+2] for i in range(0, 12, 2))
+    elif format_type == 'Hyphen (Lowercase)':
+        return '-'.join(mac[i:i+2] for i in range(0, 12, 2))
+    elif format_type == 'Dot (Lowercase)':
+        return '.'.join(mac[i:i+4] for i in range(0, 12, 4))
     else:
         return mac
 
@@ -219,7 +227,11 @@ def modify_mac_formatter_tab(tab1):
             'Colon (Cisco)', 
             'Hyphen (Windows)', 
             'Dot (Cisco)', 
-            'No Separator'
+            'No Separator (Uppercase)',
+            'No Separator (Lowercase)',
+            'Colon (Lowercase)', 
+            'Hyphen (Lowercase)', 
+            'Dot (Lowercase)'
         ]
         selected_format = st.selectbox('Select Format', format_options)
         
