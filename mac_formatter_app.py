@@ -2,6 +2,56 @@ import streamlit as st
 import requests
 import socket
 import ipaddress
+import re
+import random
+
+def validate_mac_address(mac):
+    """
+    Validate MAC address in various formats
+    """
+    # Remove any separators and whitespace
+    mac = mac.replace(':', '').replace('-', '').replace('.', '').replace(' ', '')
+    
+    # Check if the MAC address is a valid hexadecimal string of 12 characters
+    if not re.match(r'^[0-9A-Fa-f]{12}$', mac):
+        return False
+    return True
+
+def format_mac_address(mac, format_type):
+    """
+    Format MAC address to different styles
+    """
+    # Remove any existing separators and convert to lowercase
+    mac = mac.replace(':', '').replace('-', '').replace('.', '').replace(' ', '').lower()
+    
+    # Formats
+    if format_type == 'Colon (Cisco)':
+        return ':'.join(mac[i:i+2] for i in range(0, 12, 2))
+    elif format_type == 'Hyphen (Windows)':
+        return '-'.join(mac[i:i+2] for i in range(0, 12, 2))
+    elif format_type == 'Dot (Cisco)':
+        return '.'.join(mac[i:i+4] for i in range(0, 12, 4))
+    elif format_type == 'No Separator':
+        return mac.upper()
+    else:
+        return mac
+
+def generate_random_mac(mac_type='Random'):
+    """
+    Generate a random MAC address
+    """
+    if mac_type == 'Unicast':
+        # Ensure the first byte is even (unicast)
+        first_byte = random.choice([0, 2, 4, 6, 8, 10, 12, 14]) 
+    elif mac_type == 'Multicast':
+        # Ensure the first byte is odd (multicast)
+        first_byte = random.choice([1, 3, 5, 7, 9, 11, 13, 15])
+    else:  # Random
+        first_byte = random.randint(0, 15)
+    
+    # Generate the rest of the MAC address
+    mac = f"{first_byte:x}" + ''.join(f"{random.randint(0, 15):x}" for _ in range(11))
+    return mac.upper()
 
 def is_private_ip(ip):
     """
@@ -152,7 +202,79 @@ def display_ip_lookup_details(ip_details):
         st.write(f"**Accuracy Radius:** {ip_details['geolocation']['accuracy_radius']}")
         st.write("*IP Address information is less than 3 months old*")
 
-# Modify the main() function's IP Lookup tab to use these new functions
+def modify_mac_formatter_tab(tab1):
+    with tab1:
+        st.subheader("MAC Address Formatter")
+        
+        # MAC Address input
+        mac_address = st.text_input(
+            'Enter MAC Address', 
+            placeholder='e.g., 00:11:22:33:44:55 or 00-11-22-33-44-55', 
+            key='mac_input',
+            help='Enter a valid MAC address'
+        )
+        
+        # Format selection
+        format_options = [
+            'Colon (Cisco)', 
+            'Hyphen (Windows)', 
+            'Dot (Cisco)', 
+            'No Separator'
+        ]
+        selected_format = st.selectbox('Select Format', format_options)
+        
+        # Format button
+        if st.button('Format MAC Address', type='primary', key='format_mac_button'):
+            # Validate MAC address
+            if not mac_address:
+                st.warning('Please enter a MAC address.')
+            elif not validate_mac_address(mac_address):
+                st.error('Invalid MAC Address. Please enter a valid MAC address.')
+            else:
+                # Format MAC address
+                formatted_mac = format_mac_address(mac_address, selected_format)
+                
+                # Display results
+                st.success('MAC Address Formatted Successfully! 🖥️')
+                st.code(formatted_mac, language='text')
+
+def modify_mac_generator_tab(tab2):
+    with tab2:
+        st.subheader("Random MAC Address Generator")
+        
+        # MAC Type selection
+        mac_type_options = ['Random', 'Unicast', 'Multicast']
+        selected_mac_type = st.selectbox('Select MAC Address Type', mac_type_options)
+        
+        # Number of MACs to generate
+        num_macs = st.slider('Number of MAC Addresses', min_value=1, max_value=10, value=1)
+        
+        # Generate button
+        if st.button('Generate MAC Addresses', type='primary', key='generate_mac_button'):
+            # Generate MACs
+            generated_macs = []
+            for _ in range(num_macs):
+                mac = generate_random_mac(selected_mac_type)
+                generated_macs.append(mac)
+            
+            # Display results
+            st.success(f'{num_macs} MAC Address(es) Generated Successfully! 🌐')
+            for mac in generated_macs:
+                # Offer multiple formatting options
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.write("Colon (Cisco):")
+                    st.code(':'.join(mac[i:i+2] for i in range(0, 12, 2)), language='text')
+                with col2:
+                    st.write("Hyphen (Windows):")
+                    st.code('-'.join(mac[i:i+2] for i in range(0, 12, 2)), language='text')
+                with col3:
+                    st.write("Dot (Cisco):")
+                    st.code('.'.join(mac[i:i+4] for i in range(0, 12, 4)), language='text')
+                with col4:
+                    st.write("No Separator:")
+                    st.code(mac, language='text')
+
 def modify_ip_lookup_tab(tab3):
     with tab3:
         st.subheader("IP Address Lookup")
@@ -182,5 +304,26 @@ def modify_ip_lookup_tab(tab3):
                 else:
                     st.error('Unable to retrieve IP details. Please try again.')
 
-# Note: This is a modification to be integrated into your existing script
-# You would replace the existing IP Lookup tab code with this implementation
+def validate_ip_address(ip):
+    """
+    Validate IP address
+    """
+    try:
+        ipaddress.ip_address(ip)
+        return True
+    except ValueError:
+        return False
+
+def main():
+    st.title('Network Utility Toolkit')
+    
+    # Create tabs
+    tab1, tab2, tab3 = st.tabs(['MAC Formatter', 'MAC Generator', 'IP Lookup'])
+    
+    # Populate tabs
+    modify_mac_formatter_tab(tab1)
+    modify_mac_generator_tab(tab2)
+    modify_ip_lookup_tab(tab3)
+
+if __name__ == '__main__':
+    main()
