@@ -28,10 +28,15 @@ A comprehensive Streamlit application providing advanced network-related utiliti
 - ISP and network details
 
 ### 4. Network Diagnostic Tools
-- Ping utility
-- Port scanner
+- Enhanced Ping utility with error handling
+- Improved port scanner with detailed feedback
 - Hash generator (MD5, SHA-1, SHA-256, SHA-512)
 - Strong password generator
+
+## Network Tools Limitations
+- Network tools are executed from Streamlit's server
+- Results may vary due to server network configurations
+- Recommended for demonstration purposes only
 
 ## Requirements
 - Python 3.7+

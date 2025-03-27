@@ -168,9 +168,19 @@ def comprehensive_ip_lookup(ip_address):
 
 def perform_ping(host, count=4):
     """
-    Perform ping operation cross-platform
+    Perform ping operation with enhanced error handling
     """
     try:
+        # Validate host input
+        if not host:
+            return "Error: No host specified"
+        
+        # Check for valid hostname/IP
+        try:
+            socket.gethostbyname(host)
+        except socket.gaierror:
+            return f"Error: Could not resolve hostname {host}"
+
         # Determine OS and construct appropriate ping command
         param = '-n' if platform.system().lower() == 'windows' else '-c'
         
@@ -178,27 +188,43 @@ def perform_ping(host, count=4):
         command = ['ping', param, str(count), host]
         
         # Run ping and capture output
-        result = subprocess.run(command, capture_output=True, text=True, timeout=10)
+        try:
+            result = subprocess.run(command, capture_output=True, text=True, timeout=10)
+            return result.stdout
+        except subprocess.TimeoutExpired:
+            return f"Ping to {host} timed out"
         
-        return result.stdout
-    except subprocess.TimeoutExpired:
-        return "Ping timed out"
     except Exception as e:
         return f"Error performing ping: {e}"
 
 def port_scan(host, start_port=1, end_port=1024):
     """
-    Perform basic port scanning
+    Perform basic port scanning with enhanced error handling
     """
-    open_ports = []
-    for port in range(start_port, end_port + 1):
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(0.5)
-        result = sock.connect_ex((host, port))
-        if result == 0:
-            open_ports.append(port)
-        sock.close()
-    return open_ports
+    try:
+        # Validate host input
+        if not host:
+            return "Error: No host specified"
+        
+        # Resolve hostname to IP
+        try:
+            host_ip = socket.gethostbyname(host)
+        except socket.gaierror:
+            return f"Error: Could not resolve hostname {host}"
+
+        open_ports = []
+        for port in range(start_port, end_port + 1):
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(1.0)  # Increased timeout for better reliability
+                result = sock.connect_ex((host_ip, port))
+                if result == 0:
+                    open_ports.append(port)
+                sock.close()
+            except Exception as e:
+                st.warning(f"Error scanning port {port}: {e}")
+        
+        return open_ports
 
 def generate_hash(text, hash_type='SHA-256'):
     """
@@ -359,6 +385,9 @@ def modify_network_tools_tab(tab4):
             ping_count = st.slider('Number of Pings', min_value=1, max_value=10, value=4)
             
             if st.button('Perform Ping'):
+                # Add a warning about server-side execution
+                st.warning("Note: Ping is performed from Streamlit's server, which may have network limitations. Results may vary.")
+                
                 result = perform_ping(host, ping_count)
                 st.code(result, language='text')
         
@@ -368,11 +397,17 @@ def modify_network_tools_tab(tab4):
             end_port = st.number_input('End Port', min_value=1, max_value=65535, value=1024)
             
             if st.button('Scan Ports'):
+                # Add a warning about server-side execution
+                st.warning("Note: Port scan is performed from Streamlit's server, which may have network limitations. Results may vary.")
+                
                 open_ports = port_scan(host, start_port, end_port)
-                if open_ports:
-                    st.success(f"Open Ports: {open_ports}")
+                if isinstance(open_ports, list):
+                    if open_ports:
+                        st.success(f"Open Ports: {open_ports}")
+                    else:
+                        st.warning("No open ports found.")
                 else:
-                    st.warning("No open ports found.")
+                    st.error(open_ports)
         
         elif selected_tool == 'Hash Generator':
             hash_input = st.text_input('Enter Text to Hash')
