@@ -33,6 +33,14 @@ A comprehensive Streamlit application providing advanced network-related utiliti
 - Hash generator (MD5, SHA-1, SHA-256, SHA-512)
 - Strong password generator
 
+### 5. Duplicate Remover
+- Remove duplicate entries from text
+- Configurable options:
+  - Case sensitivity toggle
+  - Whitespace handling
+- Detailed statistics on processed entries
+- Easy export of unique entries
+
 ## Network Tools Limitations
 - Network tools are executed from Streamlit's server
 - Results may vary due to server network configurations
@@ -61,6 +69,7 @@ streamlit run mac_formatter_app.py
    - MAC Generator
    - IP Lookup
    - Network Tools
+   - Duplicate Remover
 2. Follow the on-screen instructions
 3. Click the action buttons to generate or retrieve information
 

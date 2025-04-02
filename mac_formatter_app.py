@@ -265,6 +265,59 @@ def generate_password(length=12, use_uppercase=True, use_lowercase=True,
     password = ''.join(random.choice(character_set) for _ in range(length))
     return password
 
+def remove_duplicates(text, case_sensitive=True, ignore_whitespace=False):
+    """
+    Remove duplicate entries from text
+    
+    Args:
+        text (str): Text with entries separated by newlines
+        case_sensitive (bool): Whether to treat case differently
+        ignore_whitespace (bool): Whether to ignore leading/trailing whitespace
+        
+    Returns:
+        tuple: (unique_entries, removed_count, stats)
+    """
+    if not text:
+        return "", 0, {"input_count": 0, "output_count": 0, "removed_count": 0}
+    
+    # Split by newlines
+    lines = text.split('\n')
+    
+    # Filter out empty lines
+    non_empty_lines = [line for line in lines if line.strip()]
+    
+    # Process lines according to settings
+    processed_lines = []
+    for line in non_empty_lines:
+        if ignore_whitespace:
+            line = line.strip()
+        if not case_sensitive:
+            processed_lines.append((line.lower(), line))
+        else:
+            processed_lines.append((line, line))
+    
+    # Remove duplicates while preserving order
+    seen = set()
+    unique_entries = []
+    for key, original in processed_lines:
+        if key not in seen:
+            seen.add(key)
+            unique_entries.append(original)
+    
+    # Calculate statistics
+    input_count = len(non_empty_lines)
+    output_count = len(unique_entries)
+    removed_count = input_count - output_count
+    
+    stats = {
+        "input_count": input_count,
+        "output_count": output_count,
+        "removed_count": removed_count,
+        "reduction_percentage": round((removed_count / input_count * 100), 2) if input_count > 0 else 0
+    }
+    
+    return '\n'.join(unique_entries), removed_count, stats
+
 def modify_mac_formatter_tab(tab1):
     with tab1:
         st.subheader("MAC Address Formatter")
@@ -435,16 +488,80 @@ def modify_network_tools_tab(tab4):
                 )
                 st.code(f"Generated Password: {password}", language='text')
 
+def modify_duplicate_remover_tab(tab5):
+    with tab5:
+        st.subheader("Duplicate Remover")
+        
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            text_input = st.text_area(
+                'Enter text with duplicate entries (one per line)',
+                height=300,
+                placeholder='Enter items here, one per line...',
+                help='Each line will be treated as a separate entry'
+            )
+        
+        with col2:
+            st.write("**Options:**")
+            case_sensitive = st.checkbox('Case Sensitive', value=True, 
+                                        help='When checked, "ABC" and "abc" are treated as different entries')
+            ignore_whitespace = st.checkbox('Ignore Whitespace', value=True, 
+                                           help='When checked, leading and trailing whitespace are ignored')
+            
+            st.write("**Example:**")
+            example_text = """apple
+APPLE
+banana
+banana
+  cherry  
+cherry"""
+            st.code(example_text, language='text')
+            
+            st.write("With default options, this would keep: apple, APPLE, banana, cherry")
+        
+        if st.button('Remove Duplicates', type='primary'):
+            if not text_input:
+                st.warning('Please enter some text.')
+            else:
+                unique_text, removed_count, stats = remove_duplicates(
+                    text_input, 
+                    case_sensitive=case_sensitive, 
+                    ignore_whitespace=ignore_whitespace
+                )
+                
+                st.success(f'Duplicates Removed Successfully! Found {stats["removed_count"]} duplicates. 🧹')
+                
+                # Display statistics
+                st.subheader("Results")
+                cols = st.columns(4)
+                cols[0].metric("Input Items", stats["input_count"])
+                cols[1].metric("Unique Items", stats["output_count"])
+                cols[2].metric("Removed", stats["removed_count"])
+                cols[3].metric("Reduction", f"{stats['reduction_percentage']}%")
+                
+                # Display result
+                st.text_area("Unique Entries:", value=unique_text, height=250)
+                
+                # Copy to clipboard button (implemented as a download button since Streamlit doesn't have direct clipboard access)
+                st.download_button(
+                    label="📋 Copy to Clipboard",
+                    data=unique_text,
+                    file_name="unique_entries.txt",
+                    mime="text/plain"
+                )
+
 def main():
     st.set_page_config(page_title='Network Utility Toolkit', page_icon='🌐', layout='wide')
     st.title('🌐 Network Utility Toolkit')
     
     # Create tabs
-    tab1, tab2, tab3, tab4 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
         'MAC Formatter', 
         'MAC Generator', 
         'IP Lookup', 
-        'Network Tools'
+        'Network Tools',
+        'Duplicate Remover'
     ])
     
     # Populate tabs
@@ -452,6 +569,7 @@ def main():
     modify_mac_generator_tab(tab2)
     modify_ip_lookup_tab(tab3)
     modify_network_tools_tab(tab4)
+    modify_duplicate_remover_tab(tab5)
 
 if __name__ == '__main__':
     main()
