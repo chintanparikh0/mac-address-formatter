@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Network Utility Toolkit - A comprehensive network utility application
-# Author: [Your Name]
+# Author: [ChintanParikh]
 # Version: 1.0.0
 
 # Standard library imports
