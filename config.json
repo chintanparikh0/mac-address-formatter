@@ -1,0 +1,30 @@
+{
+    "api": {
+        "ipapi_key": "",
+        "rate_limit": 1,
+        "timeout": 5,
+        "max_retries": 3
+    },
+    "security": {
+        "ssl_verify": true,
+        "allowed_ip_ranges": ["192.168.0.0/16", "10.0.0.0/8"],
+        "max_port_range": 1000,
+        "scan_rate_limit": 0.1
+    },
+    "cache": {
+        "enabled": true,
+        "timeout": 3600,
+        "max_size": 1000
+    },
+    "logging": {
+        "level": "INFO",
+        "file": "app.log",
+        "max_size": 10485760,
+        "backup_count": 5,
+        "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    },
+    "export": {
+        "formats": ["csv", "json", "txt"],
+        "default_path": "exports"
+    }
+} 

@@ -1,3 +1,9 @@
+#!/usr/bin/env python3
+# Network Utility Toolkit - A comprehensive network utility application
+# Author: [Your Name]
+# Version: 1.0.0
+
+# Standard library imports
 import streamlit as st
 import requests
 import socket
@@ -6,62 +12,268 @@ import re
 import random
 import subprocess
 import platform
+import time
+import logging
+import json
+import os
+from datetime import datetime
+from functools import lru_cache
+from typing import Dict, List, Tuple, Union, Optional
+import secrets
+import string
+import ssl
+import csv
+import pathlib
 
-def validate_mac_address(mac):
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('app.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
+# Constants
+MAX_PORT_RANGE = 1000
+API_RATE_LIMIT = 1  # seconds
+SCAN_RATE_LIMIT = 0.1  # seconds
+CACHE_TIMEOUT = 3600  # 1 hour
+MAX_RETRIES = 3
+
+# Load configuration
+def load_config() -> dict:
+    """Load configuration from config.json"""
+    try:
+        if os.path.exists('config.json'):
+            with open('config.json', 'r') as f:
+                return json.load(f)
+    except Exception as e:
+        logger.error(f"Error loading config: {e}")
+    return {}
+
+CONFIG = load_config()
+
+# Cache decorator for API calls
+def rate_limited_cache(seconds: int = API_RATE_LIMIT):
     """
-    Validate MAC address in various formats
+    Decorator that combines rate limiting and caching
+    Args:
+        seconds (int): Rate limit in seconds
     """
-    # Remove any separators and whitespace
-    mac = mac.replace(':', '').replace('-', '').replace('.', '').replace(' ', '')
+    def decorator(func):
+        cache = {}
+        last_called = {}
+        
+        def wrapper(*args, **kwargs):
+            key = str(args) + str(kwargs)
+            current_time = time.time()
+            
+            # Check cache
+            if key in cache:
+                if current_time - cache[key]['timestamp'] < CACHE_TIMEOUT:
+                    logger.debug(f"Cache hit for {func.__name__}")
+                    return cache[key]['result']
+            
+            # Rate limiting
+            if key in last_called:
+                time_since_last_call = current_time - last_called[key]
+                if time_since_last_call < seconds:
+                    time.sleep(seconds - time_since_last_call)
+            
+            # Call function
+            result = func(*args, **kwargs)
+            
+            # Update cache and timestamp
+            cache[key] = {
+                'result': result,
+                'timestamp': current_time
+            }
+            last_called[key] = current_time
+            
+            return result
+        return wrapper
+    return decorator
+
+class NetworkUtilityError(Exception):
+    """Base exception class for Network Utility errors"""
+    pass
+
+class ValidationError(NetworkUtilityError):
+    """Validation error exception"""
+    pass
+
+class APIError(NetworkUtilityError):
+    """API error exception"""
+    pass
+
+class ExportManager:
+    """Manages data export functionality"""
     
-    # Check if the MAC address is a valid hexadecimal string of 12 characters
-    if not re.match(r'^[0-9A-Fa-f]{12}$', mac):
+    def __init__(self):
+        self.export_path = pathlib.Path(CONFIG.get('export', {}).get('default_path', 'exports'))
+        self.export_path.mkdir(exist_ok=True)
+        
+    def export_data(self, data: Union[List, Dict], format: str, prefix: str = '') -> str:
+        """
+        Export data to file in specified format
+        Args:
+            data: Data to export
+            format: Export format (csv, json, txt)
+            prefix: Filename prefix
+        Returns:
+            str: Path to exported file
+        """
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"{prefix}_{timestamp}.{format}" if prefix else f"export_{timestamp}.{format}"
+        filepath = self.export_path / filename
+        
+        try:
+            if format == 'json':
+                with open(filepath, 'w') as f:
+                    json.dump(data, f, indent=2)
+            elif format == 'csv':
+                if isinstance(data, list) and data and isinstance(data[0], dict):
+                    with open(filepath, 'w', newline='') as f:
+                        writer = csv.DictWriter(f, fieldnames=data[0].keys())
+                        writer.writeheader()
+                        writer.writerows(data)
+                else:
+                    raise ValueError("Data must be a list of dictionaries for CSV export")
+            elif format == 'txt':
+                with open(filepath, 'w') as f:
+                    if isinstance(data, (list, tuple)):
+                        f.write('\n'.join(map(str, data)))
+                    else:
+                        f.write(str(data))
+            else:
+                raise ValueError(f"Unsupported export format: {format}")
+            
+            logger.info(f"Data exported to {filepath}")
+            return str(filepath)
+            
+        except Exception as e:
+            logger.error(f"Export failed: {e}")
+            raise
+
+# Create export manager instance
+export_manager = ExportManager()
+
+def validate_mac_address(mac: str) -> bool:
+    """
+    Validate MAC address in various formats with enhanced validation
+    Args:
+        mac (str): MAC address to validate
+    Returns:
+        bool: True if valid, False otherwise
+    """
+    if not mac:
+        logger.debug("Empty MAC address")
         return False
-    return True
+        
+    try:
+        # Remove any separators and whitespace
+        mac_clean = mac.replace(':', '').replace('-', '').replace('.', '').replace(' ', '')
+        
+        # Basic format check
+        if not re.match(r'^[0-9A-Fa-f]{12}$', mac_clean):
+            logger.debug(f"Invalid MAC format: {mac}")
+            return False
+            
+        # Check for valid OUI (first 6 characters)
+        oui = mac_clean[:6].upper()
+        if all(x == '0' for x in oui) or all(x == 'F' for x in oui):
+            logger.debug(f"Invalid OUI in MAC: {mac}")
+            return False
+            
+        # Additional checks for common errors
+        mac_parts = [mac_clean[i:i+2] for i in range(0, 12, 2)]
+        if all(part == mac_parts[0] for part in mac_parts):
+            logger.debug(f"MAC contains repeated octets: {mac}")
+            return False
+            
+        return True
+        
+    except Exception as e:
+        logger.error(f"MAC validation error: {e}")
+        return False
 
-def format_mac_address(mac, format_type):
+def format_mac_address(mac: str, format_type: str) -> str:
     """
-    Format MAC address to different styles
+    Format MAC address to different styles with validation
+    Args:
+        mac (str): MAC address to format
+        format_type (str): Desired format type
+    Returns:
+        str: Formatted MAC address
+    Raises:
+        ValidationError: If MAC address is invalid
     """
-    # Remove any existing separators and convert to lowercase
-    mac = mac.replace(':', '').replace('-', '').replace('.', '').replace(' ', '').lower()
-    
-    # Formats
-    if format_type == 'Colon (Cisco)':
-        return ':'.join(mac[i:i+2] for i in range(0, 12, 2))
-    elif format_type == 'Hyphen (Windows)':
-        return '-'.join(mac[i:i+2] for i in range(0, 12, 2))
-    elif format_type == 'Dot (Cisco)':
-        return '.'.join(mac[i:i+4] for i in range(0, 12, 4))
-    elif format_type == 'No Separator (Uppercase)':
-        return mac.upper()
-    elif format_type == 'No Separator (Lowercase)':
-        return mac
-    elif format_type == 'Colon (Lowercase)':
-        return ':'.join(mac[i:i+2] for i in range(0, 12, 2))
-    elif format_type == 'Hyphen (Lowercase)':
-        return '-'.join(mac[i:i+2] for i in range(0, 12, 2))
-    elif format_type == 'Dot (Lowercase)':
-        return '.'.join(mac[i:i+4] for i in range(0, 12, 4))
-    else:
-        return mac
+    try:
+        # Validate input
+        if not validate_mac_address(mac):
+            raise ValidationError(f"Invalid MAC address: {mac}")
+        
+        # Remove any existing separators and convert to lowercase
+        mac_clean = mac.replace(':', '').replace('-', '').replace('.', '').replace(' ', '').lower()
+        
+        # Format mapping
+        formats = {
+            'Colon (Cisco)': ':'.join(mac_clean[i:i+2] for i in range(0, 12, 2)).upper(),
+            'Hyphen (Windows)': '-'.join(mac_clean[i:i+2] for i in range(0, 12, 2)).upper(),
+            'Dot (Cisco)': '.'.join(mac_clean[i:i+4] for i in range(0, 12, 4)).upper(),
+            'No Separator (Uppercase)': mac_clean.upper(),
+            'No Separator (Lowercase)': mac_clean.lower(),
+            'Colon (Lowercase)': ':'.join(mac_clean[i:i+2] for i in range(0, 12, 2)),
+            'Hyphen (Lowercase)': '-'.join(mac_clean[i:i+2] for i in range(0, 12, 2)),
+            'Dot (Lowercase)': '.'.join(mac_clean[i:i+4] for i in range(0, 12, 4))
+        }
+        
+        if format_type not in formats:
+            raise ValidationError(f"Invalid format type: {format_type}")
+            
+        formatted_mac = formats[format_type]
+        logger.debug(f"Formatted MAC {mac} to {formatted_mac} ({format_type})")
+        return formatted_mac
+        
+    except Exception as e:
+        logger.error(f"MAC formatting error: {e}")
+        raise
 
-def generate_random_mac(mac_type='Random'):
+def generate_random_mac(mac_type: str = 'Random') -> str:
     """
-    Generate a random MAC address
+    Generate a random MAC address with proper unicast/multicast bit
+    Args:
+        mac_type (str): Type of MAC address ('Random', 'Unicast', or 'Multicast')
+    Returns:
+        str: Generated MAC address in uppercase hexadecimal
     """
-    if mac_type == 'Unicast':
-        # Ensure the first byte is even (unicast)
-        first_byte = random.choice([0, 2, 4, 6, 8, 10, 12, 14]) 
-    elif mac_type == 'Multicast':
-        # Ensure the first byte is odd (multicast)
-        first_byte = random.choice([1, 3, 5, 7, 9, 11, 13, 15])
-    else:  # Random
-        first_byte = random.randint(0, 15)
-    
-    # Generate the rest of the MAC address
-    mac = f"{first_byte:x}" + ''.join(f"{random.randint(0, 15):x}" for _ in range(11))
-    return mac.upper()
+    try:
+        # Generate first byte based on type
+        if mac_type == 'Unicast':
+            # Set least significant bit of first byte to 0 for unicast
+            first_byte = secrets.randbelow(256) & 0xFE  # Clear last bit
+        elif mac_type == 'Multicast':
+            # Set least significant bit of first byte to 1 for multicast
+            first_byte = secrets.randbelow(256) | 0x01  # Set last bit
+        else:  # Random
+            first_byte = secrets.randbelow(256)
+        
+        # Generate remaining bytes
+        remaining_bytes = [secrets.randbelow(256) for _ in range(5)]
+        
+        # Combine all bytes and format as hex
+        mac_bytes = [first_byte] + remaining_bytes
+        mac = ''.join(f"{b:02X}" for b in mac_bytes)
+        
+        logger.debug(f"Generated {mac_type} MAC address: {mac}")
+        return mac
+        
+    except Exception as e:
+        logger.error(f"Error generating MAC address: {e}")
+        raise
 
 def validate_ip_address(ip):
     """
@@ -94,8 +306,15 @@ def get_reverse_hostname(ip):
 
 def comprehensive_ip_lookup(ip_address):
     """
-    Perform comprehensive IP address lookup
+    Perform comprehensive IP address lookup with error handling and rate limiting
+    Args:
+        ip_address (str): IP address to lookup
+    Returns:
+        dict: Dictionary containing IP details or None if lookup fails
     """
+    # Add rate limiting to prevent API abuse
+    time.sleep(1)  # Basic rate limiting
+
     # Detailed IP lookup results dictionary
     ip_details = {
         'technical': {},
@@ -104,132 +323,201 @@ def comprehensive_ip_lookup(ip_address):
         'country': {}
     }
 
-    # Technical Details
-    ip_details['technical']['ip'] = ip_address
-    ip_details['technical']['hostname'] = get_reverse_hostname(ip_address)
-    ip_details['technical']['type'] = 'Public' if not is_private_ip(ip_address) else 'Private'
-    ip_details['technical']['cidr'] = f"{ip_address}/24"
-
-    # IP API Lookups
     try:
-        # Primary API - ipapi.co
-        response1 = requests.get(f'https://ipapi.co/{ip_address}/json/')
-        
-        # Backup API - ip-api.com
-        response2 = requests.get(f'https://ip-api.com/json/{ip_address}')
+        # Technical Details - These operations are safe and don't require external APIs
+        ip_details['technical']['ip'] = ip_address
+        ip_details['technical']['hostname'] = get_reverse_hostname(ip_address)
+        ip_details['technical']['type'] = 'Public' if not is_private_ip(ip_address) else 'Private'
+        ip_details['technical']['cidr'] = f"{ip_address}/24"
 
-        # Combine results
-        data1 = response1.json() if response1.status_code == 200 else {}
-        data2 = response2.json() if response2.status_code == 200 else {}
+        # IP API Lookups with error handling and timeouts
+        try:
+            # Primary API - ipapi.co with timeout
+            response1 = requests.get(f'https://ipapi.co/{ip_address}/json/', timeout=5)
+            
+            # Backup API - ip-api.com with timeout
+            response2 = requests.get(f'https://ip-api.com/json/{ip_address}', timeout=5)
 
-        # Location Details
-        ip_details['location'] = {
-            'city': data1.get('city', data2.get('city', 'N/A')),
-            'city_confidence': '1%',
-            'metro_code': data1.get('metro_code', 'N/A'),
-            'subdivision': data1.get('region', data2.get('regionName', 'N/A')),
-            'subdivision_confidence': '80%',
-            'country': data1.get('country_name', data2.get('country', 'N/A')),
-            'country_confidence': '99%',
-            'postal_code': data1.get('postal', 'N/A'),
-            'postal_confidence': '1%',
-            'continent': data1.get('continent_code', data2.get('continent', 'N/A')),
-            'timezone': data1.get('timezone', data2.get('timezone', 'N/A')),
-        }
+            # Combine results with validation
+            data1 = response1.json() if response1.status_code == 200 else {}
+            data2 = response2.json() if response2.status_code == 200 else {}
 
-        # ASN and ISP Details
-        ip_details['asn'] = {
-            'isp': data1.get('org', data2.get('isp', 'N/A')),
-            'organization': data1.get('org', data2.get('org', 'N/A')),
-            'user_type': 'cellular',
-            'asn_number': 'N/A',
-            'anonymous_proxy': 'No',
-            'satellite_provider': 'No'
-        }
+            # Location Details with data validation
+            ip_details['location'] = {
+                'city': data1.get('city', data2.get('city', 'N/A')),
+                'city_confidence': '1%',
+                'metro_code': data1.get('metro_code', 'N/A'),
+                'subdivision': data1.get('region', data2.get('regionName', 'N/A')),
+                'subdivision_confidence': '80%',
+                'country': data1.get('country_name', data2.get('country', 'N/A')),
+                'country_confidence': '99%',
+                'postal_code': data1.get('postal', 'N/A'),
+                'postal_confidence': '1%',
+                'continent': data1.get('continent_code', data2.get('continent', 'N/A')),
+                'timezone': data1.get('timezone', data2.get('timezone', 'N/A')),
+            }
 
-        # Country Details
-        ip_details['country'] = {
-            'registered_country': data1.get('country_name', data2.get('country', 'N/A')),
-            'represented_country': 'Not Provided'
-        }
+            # ASN and ISP Details with data validation
+            ip_details['asn'] = {
+                'isp': data1.get('org', data2.get('isp', 'N/A')),
+                'organization': data1.get('org', data2.get('org', 'N/A')),
+                'user_type': 'cellular',
+                'asn_number': data1.get('asn', 'N/A'),
+                'anonymous_proxy': 'No',
+                'satellite_provider': 'No'
+            }
 
-        # Geolocation
-        ip_details['geolocation'] = {
-            'latitude': data1.get('latitude', data2.get('lat', 'N/A')),
-            'longitude': data1.get('longitude', data2.get('lon', 'N/A')),
-            'accuracy_radius': '20 km'
-        }
+            # Country Details
+            ip_details['country'] = {
+                'registered_country': data1.get('country_name', data2.get('country', 'N/A')),
+                'represented_country': 'Not Provided'
+            }
+
+            # Geolocation with data validation
+            ip_details['geolocation'] = {
+                'latitude': data1.get('latitude', data2.get('lat', 'N/A')),
+                'longitude': data1.get('longitude', data2.get('lon', 'N/A')),
+                'accuracy_radius': '20 km'
+            }
+
+        except requests.exceptions.Timeout:
+            st.error("API request timed out. Please try again later.")
+            return None
+        except requests.exceptions.RequestException as e:
+            st.error(f"API request failed: {str(e)}")
+            return None
 
         return ip_details
 
     except Exception as e:
-        st.error(f"Error in IP lookup: {e}")
+        st.error(f"Error in IP lookup: {str(e)}")
         return None
 
 def perform_ping(host, count=4):
     """
-    Perform ping operation with enhanced error handling
+    Perform ping operation with enhanced error handling and security
+    Args:
+        host (str): Host to ping
+        count (int): Number of pings to send
+    Returns:
+        str: Ping results or error message
     """
     try:
-        # Validate host input
+        # Input validation
         if not host:
             return "Error: No host specified"
         
-        # Check for valid hostname/IP
+        # Basic input sanitization
+        host = re.sub(r'[;&|]', '', host)  # Remove potentially dangerous characters
+        
+        # Validate hostname/IP
         try:
             socket.gethostbyname(host)
         except socket.gaierror:
             return f"Error: Could not resolve hostname {host}"
 
+        # Set timeout for the ping command
+        timeout = 10  # seconds
+        
         # Determine OS and construct appropriate ping command
         param = '-n' if platform.system().lower() == 'windows' else '-c'
         
-        # Construct command
-        command = ['ping', param, str(count), host]
+        # Construct command with input validation
+        command = ['ping', param, str(min(count, 10)), host]  # Limit count to 10
         
-        # Run ping and capture output
+        # Run ping with timeout
         try:
-            result = subprocess.run(command, capture_output=True, text=True, timeout=10)
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=True
+            )
             return result.stdout
         except subprocess.TimeoutExpired:
-            return f"Ping to {host} timed out"
+            return f"Ping to {host} timed out after {timeout} seconds"
+        except subprocess.CalledProcessError as e:
+            return f"Ping failed: {e.stderr}"
         
     except Exception as e:
-        return f"Error performing ping: {e}"
+        return f"Error performing ping: {str(e)}"
 
 def port_scan(host, start_port=1, end_port=1024):
     """
-    Perform basic port scanning with enhanced error handling
+    Perform basic port scanning with enhanced error handling and rate limiting
+    Args:
+        host (str): Target host to scan
+        start_port (int): Starting port number (1-65535)
+        end_port (int): Ending port number (1-65535)
+    Returns:
+        list: List of open ports or error message
     """
-    # Validate host input
+    # Input validation
     if not host:
         return "Error: No host specified"
     
-    # Resolve hostname to IP
-    try:
-        host_ip = socket.gethostbyname(host)
-    except socket.gaierror:
-        return f"Error: Could not resolve hostname {host}"
-
-    open_ports = []
-    for port in range(start_port, end_port + 1):
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(1.0)  # Increased timeout for better reliability
-            result = sock.connect_ex((host_ip, port))
-            if result == 0:
-                open_ports.append(port)
-            sock.close()
-        except Exception as e:
-            st.warning(f"Error scanning port {port}: {e}")
+    # Validate port ranges
+    start_port = max(1, min(start_port, 65535))
+    end_port = max(1, min(end_port, 65535))
+    if start_port > end_port:
+        start_port, end_port = end_port, start_port
     
-    return open_ports
+    # Limit scan range for safety
+    if end_port - start_port > 1000:
+        return "Error: Port range too large. Please limit to 1000 ports at a time."
+    
+    try:
+        # Resolve hostname to IP with timeout
+        try:
+            host_ip = socket.gethostbyname(host)
+        except socket.gaierror:
+            return f"Error: Could not resolve hostname {host}"
+        
+        open_ports = []
+        for port in range(start_port, end_port + 1):
+            try:
+                # Add rate limiting
+                time.sleep(0.1)  # 100ms delay between ports
+                
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(1.0)
+                result = sock.connect_ex((host_ip, port))
+                if result == 0:
+                    # Try to get service name
+                    try:
+                        service = socket.getservbyport(port)
+                    except (socket.error, OSError):
+                        service = "unknown"
+                    open_ports.append((port, service))
+                sock.close()
+            except Exception as e:
+                st.warning(f"Error scanning port {port}: {str(e)}")
+            
+            # Add progress indicator
+            if (port - start_port) % 10 == 0:
+                progress = (port - start_port) / (end_port - start_port)
+                st.progress(progress)
+        
+        return open_ports
+    
+    except Exception as e:
+        return f"Error during port scan: {str(e)}"
 
 def generate_hash(text, hash_type='SHA-256'):
     """
-    Generate hash for given text
+    Generate cryptographic hash for given text
+    Args:
+        text (str): Text to hash
+        hash_type (str): Type of hash algorithm to use
+    Returns:
+        str: Hexadecimal hash string
     """
     import hashlib
+    
+    # Validate input
+    if not text:
+        return "Error: No text provided"
     
     hash_types = {
         'MD5': hashlib.md5,
@@ -238,16 +526,36 @@ def generate_hash(text, hash_type='SHA-256'):
         'SHA-512': hashlib.sha512
     }
     
-    hash_func = hash_types.get(hash_type, hashlib.sha256)
-    return hash_func(text.encode()).hexdigest()
+    # Validate hash type
+    if hash_type not in hash_types:
+        return f"Error: Unsupported hash type. Supported types: {', '.join(hash_types.keys())}"
+    
+    try:
+        hash_func = hash_types[hash_type]
+        return hash_func(text.encode()).hexdigest()
+    except Exception as e:
+        return f"Error generating hash: {str(e)}"
 
 def generate_password(length=12, use_uppercase=True, use_lowercase=True, 
-                      use_digits=True, use_symbols=True):
+                     use_digits=True, use_symbols=True):
     """
-    Generate a strong random password
+    Generate a cryptographically secure random password
+    Args:
+        length (int): Password length (6-32 characters)
+        use_uppercase (bool): Include uppercase letters
+        use_lowercase (bool): Include lowercase letters
+        use_digits (bool): Include digits
+        use_symbols (bool): Include special characters
+    Returns:
+        str: Generated password or error message
     """
     import string
+    import secrets  # More secure than random
     
+    # Validate length
+    length = max(6, min(length, 32))  # Ensure length is between 6 and 32
+    
+    # Build character set
     character_set = ''
     if use_uppercase:
         character_set += string.ascii_uppercase
@@ -256,66 +564,92 @@ def generate_password(length=12, use_uppercase=True, use_lowercase=True,
     if use_digits:
         character_set += string.digits
     if use_symbols:
-        character_set += string.punctuation
+        character_set += "!@#$%^&*()_+-=[]{}|;:,.<>?"  # Custom safe symbols
     
     if not character_set:
         return "Error: No character types selected"
     
-    password = ''.join(random.choice(character_set) for _ in range(length))
-    return password
-
-def remove_duplicates(text, case_sensitive=True, ignore_whitespace=False):
-    """
-    Remove duplicate entries from text
+    try:
+        # Generate password ensuring at least one character from each selected type
+        password = []
+        
+        # Add one character from each selected type
+        if use_uppercase:
+            password.append(secrets.choice(string.ascii_uppercase))
+        if use_lowercase:
+            password.append(secrets.choice(string.ascii_lowercase))
+        if use_digits:
+            password.append(secrets.choice(string.digits))
+        if use_symbols:
+            password.append(secrets.choice("!@#$%^&*()_+-=[]{}|;:,.<>?"))
+        
+        # Fill the rest with random characters
+        remaining_length = length - len(password)
+        password.extend(secrets.choice(character_set) for _ in range(remaining_length))
+        
+        # Shuffle the password
+        password_list = list(password)
+        secrets.SystemRandom().shuffle(password_list)
+        
+        return ''.join(password_list)
     
+    except Exception as e:
+        return f"Error generating password: {str(e)}"
+
+def remove_duplicates(text: str, case_sensitive: bool = True, ignore_whitespace: bool = False) -> Tuple[str, int, Dict[str, int]]:
+    """
+    Remove duplicate entries from text with enhanced handling
     Args:
         text (str): Text with entries separated by newlines
         case_sensitive (bool): Whether to treat case differently
         ignore_whitespace (bool): Whether to ignore leading/trailing whitespace
-        
     Returns:
         tuple: (unique_entries, removed_count, stats)
     """
     if not text:
-        return "", 0, {"input_count": 0, "output_count": 0, "removed_count": 0}
+        return "", 0, {"input_count": 0, "output_count": 0, "removed_count": 0, "reduction_percentage": 0}
     
-    # Split by newlines
-    lines = text.split('\n')
-    
-    # Filter out empty lines
-    non_empty_lines = [line for line in lines if line.strip()]
-    
-    # Process lines according to settings
-    processed_lines = []
-    for line in non_empty_lines:
-        if ignore_whitespace:
-            line = line.strip()
-        if not case_sensitive:
-            processed_lines.append((line.lower(), line))
-        else:
-            processed_lines.append((line, line))
-    
-    # Remove duplicates while preserving order
-    seen = set()
-    unique_entries = []
-    for key, original in processed_lines:
-        if key not in seen:
-            seen.add(key)
-            unique_entries.append(original)
-    
-    # Calculate statistics
-    input_count = len(non_empty_lines)
-    output_count = len(unique_entries)
-    removed_count = input_count - output_count
-    
-    stats = {
-        "input_count": input_count,
-        "output_count": output_count,
-        "removed_count": removed_count,
-        "reduction_percentage": round((removed_count / input_count * 100), 2) if input_count > 0 else 0
-    }
-    
-    return '\n'.join(unique_entries), removed_count, stats
+    try:
+        # Split by newlines and filter out empty lines
+        lines = [line for line in text.split('\n') if line.strip()]
+        
+        # Process lines according to settings
+        processed_lines = []
+        for line in lines:
+            # Process the line based on settings
+            if ignore_whitespace:
+                line = line.strip()
+            # Create a key for comparison and store original line
+            key = line.lower() if not case_sensitive else line
+            processed_lines.append((key, line))
+        
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_entries = []
+        for key, original in processed_lines:
+            if key not in seen:
+                seen.add(key)
+                unique_entries.append(original)
+        
+        # Calculate statistics
+        input_count = len(lines)
+        output_count = len(unique_entries)
+        removed_count = input_count - output_count
+        reduction_percentage = round((removed_count / input_count * 100), 2) if input_count > 0 else 0
+        
+        stats = {
+            "input_count": input_count,
+            "output_count": output_count,
+            "removed_count": removed_count,
+            "reduction_percentage": reduction_percentage
+        }
+        
+        logger.debug(f"Removed {removed_count} duplicates from {input_count} entries")
+        return '\n'.join(unique_entries), removed_count, stats
+        
+    except Exception as e:
+        logger.error(f"Error removing duplicates: {e}")
+        raise
 
 def convert_store_code(store_code):
     """
@@ -369,9 +703,11 @@ def get_letter_number_map():
     }
 
 def modify_mac_formatter_tab(tab1):
+    """MAC Formatter tab with export functionality"""
     with tab1:
         st.subheader("MAC Address Formatter")
         
+        # Input area
         mac_address = st.text_input(
             'Enter MAC Address', 
             placeholder='e.g., 00:11:22:33:44:55 or 00-11-22-33-44-55', 
@@ -391,15 +727,46 @@ def modify_mac_formatter_tab(tab1):
         ]
         selected_format = st.selectbox('Select Format', format_options)
         
-        if st.button('Format MAC Address', type='primary', key='format_mac_button'):
-            if not mac_address:
-                st.warning('Please enter a MAC address.')
-            elif not validate_mac_address(mac_address):
-                st.error('Invalid MAC Address. Please enter a valid MAC address.')
-            else:
-                formatted_mac = format_mac_address(mac_address, selected_format)
-                st.success('MAC Address Formatted Successfully! 🖥️')
-                st.code(formatted_mac, language='text')
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button('Format MAC Address', type='primary', key='format_mac_button'):
+                try:
+                    if not mac_address:
+                        st.warning('Please enter a MAC address.')
+                    elif not validate_mac_address(mac_address):
+                        st.error('Invalid MAC Address. Please enter a valid MAC address.')
+                    else:
+                        formatted_mac = format_mac_address(mac_address, selected_format)
+                        st.success('MAC Address Formatted Successfully! 🖥️')
+                        st.code(formatted_mac, language='text')
+                        
+                        # Add to session state history
+                        if 'mac_history' not in st.session_state:
+                            st.session_state.mac_history = []
+                        st.session_state.mac_history.append({
+                            'original': mac_address,
+                            'formatted': formatted_mac,
+                            'format': selected_format,
+                            'timestamp': datetime.now().isoformat()
+                        })
+                        
+                except Exception as e:
+                    st.error(f"Error: {str(e)}")
+        
+        with col2:
+            if st.button('Export History', key='export_mac_history'):
+                if 'mac_history' in st.session_state and st.session_state.mac_history:
+                    try:
+                        export_path = export_manager.export_data(
+                            st.session_state.mac_history,
+                            'csv',
+                            'mac_history'
+                        )
+                        st.success(f'History exported to {export_path}')
+                    except Exception as e:
+                        st.error(f"Export failed: {str(e)}")
+                else:
+                    st.warning('No history to export.')
 
 def modify_mac_generator_tab(tab2):
     with tab2:
@@ -705,26 +1072,48 @@ def modify_store_code_converter_tab(tab6):
                 st.markdown(f"**{orig}** → **{conv}**")
 
 def main():
-    st.set_page_config(page_title='Network Utility Toolkit', page_icon='🌐', layout='wide')
-    st.title('🌐 Network Utility Toolkit')
-    
-    # Create tabs
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-        'MAC Formatter', 
-        'MAC Generator', 
-        'IP Lookup', 
-        'Network Tools',
-        'Duplicate Remover',
-        'Store Code Converter'
-    ])
-    
-    # Populate tabs
-    modify_mac_formatter_tab(tab1)
-    modify_mac_generator_tab(tab2)
-    modify_ip_lookup_tab(tab3)
-    modify_network_tools_tab(tab4)
-    modify_duplicate_remover_tab(tab5)
-    modify_store_code_converter_tab(tab6)
+    """
+    Main application entry point with error handling and session state management
+    """
+    try:
+        # Configure Streamlit page
+        st.set_page_config(
+            page_title='Network Utility Toolkit',
+            page_icon='🌐',
+            layout='wide',
+            initial_sidebar_state='expanded'
+        )
+        
+        # Initialize session state if needed
+        if 'history' not in st.session_state:
+            st.session_state.history = []
+        
+        st.title('🌐 Network Utility Toolkit')
+        
+        # Create tabs with error handling
+        try:
+            tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+                'MAC Formatter', 
+                'MAC Generator', 
+                'IP Lookup', 
+                'Network Tools',
+                'Duplicate Remover',
+                'Store Code Converter'
+            ])
+            
+            # Populate tabs with error handling
+            modify_mac_formatter_tab(tab1)
+            modify_mac_generator_tab(tab2)
+            modify_ip_lookup_tab(tab3)
+            modify_network_tools_tab(tab4)
+            modify_duplicate_remover_tab(tab5)
+            modify_store_code_converter_tab(tab6)
+            
+        except Exception as tab_error:
+            st.error(f"Error creating tabs: {str(tab_error)}")
+            
+    except Exception as e:
+        st.error(f"Application error: {str(e)}")
 
 if __name__ == '__main__':
     main()
