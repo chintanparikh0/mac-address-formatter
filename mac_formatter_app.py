@@ -201,30 +201,29 @@ def port_scan(host, start_port=1, end_port=1024):
     """
     Perform basic port scanning with enhanced error handling
     """
+    # Validate host input
+    if not host:
+        return "Error: No host specified"
+    
+    # Resolve hostname to IP
     try:
-        # Validate host input
-        if not host:
-            return "Error: No host specified"
-        
-        # Resolve hostname to IP
-        try:
-            host_ip = socket.gethostbyname(host)
-        except socket.gaierror:
-            return f"Error: Could not resolve hostname {host}"
+        host_ip = socket.gethostbyname(host)
+    except socket.gaierror:
+        return f"Error: Could not resolve hostname {host}"
 
-        open_ports = []
-        for port in range(start_port, end_port + 1):
-            try:
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(1.0)  # Increased timeout for better reliability
-                result = sock.connect_ex((host_ip, port))
-                if result == 0:
-                    open_ports.append(port)
-                sock.close()
-            except Exception as e:
-                st.warning(f"Error scanning port {port}: {e}")
-        
-        return open_ports
+    open_ports = []
+    for port in range(start_port, end_port + 1):
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(1.0)  # Increased timeout for better reliability
+            result = sock.connect_ex((host_ip, port))
+            if result == 0:
+                open_ports.append(port)
+            sock.close()
+        except Exception as e:
+            st.warning(f"Error scanning port {port}: {e}")
+    
+    return open_ports
 
 def generate_hash(text, hash_type='SHA-256'):
     """
@@ -317,6 +316,57 @@ def remove_duplicates(text, case_sensitive=True, ignore_whitespace=False):
     }
     
     return '\n'.join(unique_entries), removed_count, stats
+
+def convert_store_code(store_code):
+    """
+    Convert alphanumeric store code to numeric code
+    For example, A147 becomes 10147
+    
+    Args:
+        store_code (str): Alphanumeric store code (e.g., A147)
+        
+    Returns:
+        str: Numeric store code (e.g., 10147)
+    """
+    if not store_code:
+        return ""
+    
+    # Define the mapping from letters to numbers
+    letter_map = {
+        'A': 10, 'B': 11, 'C': 12, 'D': 13, 'E': 14, 'F': 15,
+        'G': 16, 'H': 17, 'I': 18, 'J': 19, 'K': 20, 'L': 21,
+        'M': 22, 'N': 23, 'O': 24, 'P': 25, 'Q': 26, 'R': 27,
+        'S': 28, 'T': 29, 'U': 30, 'V': 31, 'W': 32, 'X': 33,
+        'Y': 34, 'Z': 35
+    }
+    
+    # Extract the first letter (if exists) and the remaining digits
+    match = re.match(r'^([A-Za-z])(.*)$', store_code)
+    
+    if match:
+        letter, rest = match.groups()
+        letter = letter.upper()
+        
+        if letter in letter_map:
+            return str(letter_map[letter]) + rest
+    
+    # If no match or the letter isn't in our map, return the original
+    return store_code
+
+def get_letter_number_map():
+    """
+    Get the mapping of letters to numbers
+    
+    Returns:
+        dict: Letter to number mapping
+    """
+    return {
+        'A': 10, 'B': 11, 'C': 12, 'D': 13, 'E': 14, 'F': 15,
+        'G': 16, 'H': 17, 'I': 18, 'J': 19, 'K': 20, 'L': 21,
+        'M': 22, 'N': 23, 'O': 24, 'P': 25, 'Q': 26, 'R': 27,
+        'S': 28, 'T': 29, 'U': 30, 'V': 31, 'W': 32, 'X': 33,
+        'Y': 34, 'Z': 35
+    }
 
 def modify_mac_formatter_tab(tab1):
     with tab1:
@@ -551,17 +601,121 @@ cherry"""
                     mime="text/plain"
                 )
 
+def modify_store_code_converter_tab(tab6):
+    with tab6:
+        st.subheader("Store Code Converter")
+        
+        col1, col2 = st.columns([3, 2])
+        
+        with col1:
+            store_code = st.text_input(
+                'Enter Store Code',
+                placeholder='e.g., A147',
+                help='Enter an alphanumeric store code starting with a letter'
+            )
+            
+            if st.button('Convert Store Code', type='primary'):
+                if not store_code:
+                    st.warning('Please enter a store code.')
+                else:
+                    numeric_code = convert_store_code(store_code)
+                    
+                    if numeric_code == store_code:
+                        st.warning('The input does not match the expected format (letter followed by digits) or the letter is not in the range A-Z.')
+                    else:
+                        st.success('Store Code Converted Successfully! 🏪')
+                        st.markdown(f"### {store_code} → {numeric_code}")
+            
+            # Option to process multiple codes at once
+            st.markdown("---")
+            st.subheader("Batch Conversion")
+            
+            batch_input = st.text_area(
+                'Enter multiple store codes (one per line)',
+                height=150,
+                placeholder='A147\nB201\nC305',
+                help='Each line will be treated as a separate store code'
+            )
+            
+            if st.button('Convert All Codes', type='primary'):
+                if not batch_input:
+                    st.warning('Please enter store codes to convert.')
+                else:
+                    # Process each line
+                    lines = batch_input.strip().split('\n')
+                    results = []
+                    
+                    for line in lines:
+                        if line.strip():
+                            numeric = convert_store_code(line.strip())
+                            results.append((line.strip(), numeric))
+                    
+                    # Display results in a table
+                    if results:
+                        st.success(f'Converted {len(results)} store codes successfully! 🏪')
+                        
+                        # Create a DataFrame for display
+                        import pandas as pd
+                        df = pd.DataFrame(results, columns=['Original Code', 'Numeric Code'])
+                        st.dataframe(df)
+                        
+                        # Copy results button
+                        result_text = '\n'.join([f"{orig} → {num}" for orig, num in results])
+                        st.download_button(
+                            label="📋 Copy Results",
+                            data=result_text,
+                            file_name="converted_codes.txt",
+                            mime="text/plain"
+                        )
+        
+        with col2:
+            st.markdown("### Reference Chart")
+            st.markdown("This table shows the numeric value for each letter:")
+            
+            # Display the letter to number mapping
+            letter_map = get_letter_number_map()
+            
+            # Create rows of 5 items each for better display
+            rows = []
+            current_row = []
+            
+            for letter, number in letter_map.items():
+                current_row.append(f"{letter} = {number}")
+                if len(current_row) == 5:
+                    rows.append(current_row)
+                    current_row = []
+            
+            if current_row:  # Add any remaining items
+                rows.append(current_row)
+            
+            # Display the reference table
+            for row in rows:
+                st.markdown(" | ".join(row))
+            
+            st.markdown("---")
+            st.markdown("### Examples")
+            examples = [
+                ('A147', '10147'),
+                ('B220', '11220'),
+                ('C333', '12333'),
+                ('Z999', '35999')
+            ]
+            
+            for orig, conv in examples:
+                st.markdown(f"**{orig}** → **{conv}**")
+
 def main():
     st.set_page_config(page_title='Network Utility Toolkit', page_icon='🌐', layout='wide')
     st.title('🌐 Network Utility Toolkit')
     
     # Create tabs
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         'MAC Formatter', 
         'MAC Generator', 
         'IP Lookup', 
         'Network Tools',
-        'Duplicate Remover'
+        'Duplicate Remover',
+        'Store Code Converter'
     ])
     
     # Populate tabs
@@ -570,6 +724,7 @@ def main():
     modify_ip_lookup_tab(tab3)
     modify_network_tools_tab(tab4)
     modify_duplicate_remover_tab(tab5)
+    modify_store_code_converter_tab(tab6)
 
 if __name__ == '__main__':
     main()
